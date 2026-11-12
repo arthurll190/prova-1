@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Controle de Estoque Inteligente</title>
+  <style>
+    * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f4f6f9; color: #333; margin: 0; padding: 20px; }
+    .container { max-width: 900px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    header { border-bottom: 2px solid #eef0f3; padding-bottom: 15px; margin-bottom: 20px; }
+    h1 { margin: 0; color: #1e293b; font-size: 24px; }
+    p.subtitle { margin: 5px 0 0; color: #64748b; font-size: 14px; }
+    .form-grid { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 10px; margin-bottom: 20px; }
+    input, select, button { padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+    button { background-color: #2563eb; color: #fff; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; }
+    button:hover { background-color: #1d4ed8; }
+    .search-bar { width: 100%; margin-bottom: 15px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { text-align: left; padding: 12px; border-bottom: 1px solid #e2e8f0; }
+    th { background-color: #f8fafc; color: #475569; font-weight: 600; }
+    .badge-low { background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .badge-ok { background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; margin-right: 4px; }
+    .btn-plus { background-color: #10b981; }
+    .btn-minus { background-color: #f59e0b; }
+    .btn-del { background-color: #ef4444; }
+    @media (max-width: 650px) { .form-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Sistema de Controle de Estoque</h1>
+      <p class="subtitle">Finalidade: Gerenciar produtos, quantidades e alertas de reposição em tempo real.</p>
+    </header>
+
+    <form id="produtoForm" class="form-grid">
+      <input type="text" id="nome" placeholder="Nome do produto (ex: Teclado USB)" required />
+      <input type="text" id="categoria" placeholder="Categoria (ex: Periféricos)" required />
+      <input type="number" id="quantidade" placeholder="Qtd inicial" min="0" required />
+      <button type="submit">Adicionar</button>
+    </form>
+
+    <input type="text" id="busca" class="search-bar" placeholder="Buscar produto por nome ou categoria..." />
+
+    <table>
+      <thead>
+        <tr>
+          <th>Produto</th>
+          <th>Categoria</th>
+          <th>Quantidade</th>
+          <th>Status</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody id="tabelaProdutos">
+        <tr><td colspan="5">Carregando dados do banco...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Integração com Banco de Dados Firebase Firestore -->
+  <script type="module">
+    import { initializeApp } from "https://gstatic.com";
+    import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, query, orderBy } from "https://gstatic.com";
+
+    // SUBSTITUA OS DADOS ABAIXO PELAS CHAVES DO SEU PROJETO NO FIREBASE
+    const firebaseConfig = {
+      apiKey: "SUA_API_KEY",
+      authDomain: "SEU_://firebaseapp.com",
+      projectId: "SEU_PROJECT_ID",
+      storageBucket: "SEU_://appspot.com",
+      messagingSenderId: "SEU_SENDER_ID",
+      appId: "SEU_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const produtosRef = collection(db, "produtos");
+
+    const form = document.getElementById("produtoForm");
+    const tabela = document.getElementById("tabelaProdutos");
+    const buscaInput = document.getElementById("busca");
+    let listaAtual = [];
+
+    // 1. Cadastrar Produto no Banco de Dados
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const nome = document.getElementById("nome").value.trim();
+      const categoria = document.getElementById("categoria").value.trim();
+      const quantidade = parseInt(document.getElementById("quantidade").value, 10);
+
+      await addDoc(produtosRef, {
+        nome,
+        categoria,
+        quantidade,
+        criadoEm: new Date()
+      });
+
+      form.reset();
+    });
+
+    // 2. Consultar e Atualizar Tabela em Tempo Real
+    const q = query(produtosRef, orderBy("nome"));
+    onSnapshot(q, (snapshot) => {
+      listaAtual = snapshot.docs.map(documento => ({
+        id: documento.id,
+        ...documento.data()
+      }));
+      renderizarTabela(listaAtual);
+    });
+
+    // 3. Filtrar Busca
+    buscaInput.addEventListener("input", () => {
+      const termo = buscaInput.value.toLowerCase();
+      const filtrados = listaAtual.filter(p =>
+        p.nome.toLowerCase().includes(termo) || p.categoria.toLowerCase().includes(termo)
+      );
+      renderizarTabela(filtrados);
+    });
+
+    function renderizarTabela(produtos) {
+      if (produtos.length === 0) {
+        tabela.innerHTML = '<tr><td colspan="5">Nenhum produto encontrado no estoque.</td></tr>';
+        return;
+      }
+
+      tabela.innerHTML = "";
+      produtos.forEach((prod) => {
+        const statusHtml = prod.quantidade <= 5
+          ? '<span class="badge-low">Estoque Baixo</span>'
+          : '<span class="badge-ok">Normal</span>';
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><strong>${prod.nome}</strong></td>
+          <td>${prod.categoria}</td>
+          <td>${prod.quantidade} un.</td>
+          <td>${statusHtml}</td>
+          <td>
+            <button class="btn-sm btn-plus" onclick="alterarQtd('${prod.id}', ${prod.quantidade + 1})">+1</button>
+            <button class="btn-sm btn-minus" onclick="alterarQtd('${prod.id}', ${Math.max(0, prod.quantidade - 1)})">-1</button>
+            <button class="btn-sm btn-del" onclick="excluirProduto('${prod.id}')">Excluir</button>
+          </td>
+        `;
+        tabela.appendChild(tr);
+      });
+    }
+
+    // 4. Atualizar Quantidade e Excluir Registro
+    window.alterarQtd = async (id, novaQtd) => {
+      await updateDoc(doc(db, "produtos", id), { quantidade: novaQtd });
+    };
+
+    window.excluirProduto = async (id) => {
+      if (confirm("Deseja remover este produto do estoque?")) {
+        await deleteDoc(doc(db, "produtos", id));
+      }
+    };
+  </script>
+</body>
+</html>
